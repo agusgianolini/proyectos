@@ -1,0 +1,129 @@
+---
+title: "Tp Hasta Ahora"
+output: html_notebook
+---
+
+
+```{r}
+library(brms)
+library(dplyr)
+library(ggplot2)
+```
+
+Carguemos los datos
+
+```{r}
+setwd("C:/Users/Usuario/Desktop/Exactas/Bayesiana/dataset/Modelling-Football-Players-Values-on-Transfer-Market-and-Their-Determinants-using-Robust-Regression/data")
+
+datos<- read.csv("danelic2017.csv",sep=";", header = TRUE)
+
+
+head(datos)
+
+```
+
+Como vemos tenemos información sobre jugadores de fútbol. La idea de este trabajo es poder predecir el valor de transferencia de un jugador en base a alguno de sus atributos. Para esto vamos a usar una regresión lineal.
+ Intuitivamente pareciera lógico que el precio de transferencia de un jugador dependa de la cantidad de goles que tiene.
+Hagamos un plot para ver como se distribuye la información.
+
+```{r}
+datos %>% ggplot(aes(x=goals, y = value)) + geom_point(color = "chocolate") + geom_smooth(method = lm)
+```
+Pareciera que la mayoría de los datos poseen pocos goles y por lo tanto el modelo no pareciera funcionar bien para esos jugadores.
+Filtremos los datos entonces y quedémonos con los delanteros, donde quizás los goles son más importantes en su precio de transferencia que en un defensor o mediocampista.
+
+```{r}
+delanteros<- datos %>% filter(position == "FW")
+
+delanteros %>%  ggplot(aes(x=goals, y = value)) + geom_point(color = "chocolate") + geom_smooth(method = lm)
+```
+
+Aquí el modelo lineal frecuentista pareciera ajustarse mejor. Sin embargo el modelo todavía no es muy interpretable. Probemos quedándonos con los jugadores de una sola liga, digamos la inglesa.
+```{r}
+delanteros %>% 
+  filter(league == "Premier League") %>% 
+  ggplot(aes(x=goals, y = value)) + geom_point(color = "chocolate") + geom_smooth(method = lm) + theme_light()
+
+```
+Ahora el modelo frecuentista parece ajustar mejor. Sin embargo vemos que la variabilidad aumenta cuando la cantidad de goles es menor.
+
+veamos que pasa si ahora agregamos las asistencias.
+
+```{r}
+delanteros %>% 
+  filter(league == "Premier League") %>%  
+  mutate(goals_and_assists = goals + assists) %>% 
+  ggplot() + 
+  geom_point(aes(x= goals_and_assists, y = value), color = "deepskyblue") + 
+  geom_smooth(method = lm, aes(x= goals_and_assists, y = value)) +
+    scale_color_brewer(palette = "Pastel")
+
+
+
+```
+
+Pareciera andar mejor.
+
+Probemos ahora con un modelo lineal bayesiano
+
+$$
+\begin{aligned}
+Y_i \mid \beta_0, \beta_1, \beta_2, \sigma &\stackrel{\text{ind}}{\sim} \mathcal{N}(\mu_i, \sigma) 
+\\
+\mu_i &= \beta_{0} + \beta_1 X_{i1} + \beta_2 X_{i2}\\
+\\
+\beta_{0} &\sim \mathcal{N}(\mu_0, \sigma_0 ^2) \\
+\beta_{1} &\sim \mathcal{N}(\mu_1, \sigma_1^2) \\
+\beta_{2} &\sim \mathcal{N}(\mu_2, \sigma_2^2) \\
+\sigma &\sim \operatorname{Exponential}(\lambda)
+\end{aligned}
+$$
+Tenemos entonces que definir nuestros priors. 
+
+$\beta_1$ Pareciera ser cuanto define al precio de transferencia los goles, mientras que $\beta_2$ pareciera ser cuanto lo hacen las asistencias.
+
+Para darnos una mejor idea de que valores pueden tomar hagamos un modelo lineal frecuentista para ver que valores toman los mismos.
+
+```{r}
+modeloFrecuentista<- lm(formula = value ~ goals + assists, data =delanteros)
+summary(modeloFrecuentista)
+```
+
+Se ve que para el valor de $\beta_1$ el mismo toma 1811199 mientras que $\beta_2$
+3524096. 
+
+Se me ocurre tomar entonces los siguientes priors.
+
+$$
+\begin{aligned}
+\beta_{0} &\sim \mathcal{N}(500000, 10000^2) \\
+\beta_{1} &\sim \mathcal{N}(2000000, 10000^2) \\
+\beta_{2} &\sim \mathcal{N}(1000000, 5000^2) \\
+\sigma &\sim \operatorname{Exponential}(1/10000)
+
+\end{aligned}
+$$
+
+La elección de los priors por el momento es arbitraria. Veamos que tan bien ajusta el mismo.
+
+```{r}
+priors<- c(
+  prior(normal(1500000, 50000), class = "b", coef ="goals"),
+             prior(normal(500000, 2000), class = "b", coef = "assists"),
+            prior(normal(500000, 10000), class = "Intercept"),
+            prior(exponential(1/10000), class = "sigma")
+          )
+```
+
+
+```{r}
+modelo1 <- brm(bf(value~goals + assists), 
+               data = delanteros,
+               family = gaussian,
+               chains = 4, iter = 5000*2)
+plot(modelo1)
+```
+```{r}
+plot(modelo1)
+```
+
