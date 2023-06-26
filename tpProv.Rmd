@@ -8,14 +8,13 @@ output: html_notebook
 library(brms)
 library(dplyr)
 library(ggplot2)
+library(tidybayes)
 ```
 
 Carguemos los datos
 
 ```{r}
-setwd("C:/Users/Usuario/Desktop/Exactas/Bayesiana/dataset/Modelling-Football-Players-Values-on-Transfer-Market-and-Their-Determinants-using-Robust-Regression/data")
-
-datos<- read.csv("danelic2017.csv",sep=";", header = TRUE)
+datos<- read.csv("~/Escritorio/proyectos/data/danelic2017.csv",sep=";", header = TRUE)
 
 
 head(datos)
@@ -50,9 +49,12 @@ Ahora el modelo frecuentista parece ajustar mejor. Sin embargo vemos que la vari
 veamos que pasa si ahora agregamos las asistencias.
 
 ```{r}
-delanteros %>% 
+delanteros<-delanteros %>% 
   filter(league == "Premier League") %>%  
-  mutate(goals_and_assists = goals + assists) %>% 
+  mutate(goals_and_assists = goals + assists) 
+
+
+delanteros %>% 
   ggplot() + 
   geom_point(aes(x= goals_and_assists, y = value), color = "deepskyblue") + 
   geom_smooth(method = lm, aes(x= goals_and_assists, y = value)) +
@@ -124,6 +126,35 @@ modelo1 <- brm(bf(value~goals + assists),
 plot(modelo1)
 ```
 ```{r}
-plot(modelo1)
+delanteros %>%
+  add_fitted_draws(modelo1, n = 50) %>%
+  ggplot(aes(x = goals, y = value)) +
+    geom_line(aes(y = .value, group = .draw), alpha = 0.15) + 
+    geom_point(data = delanteros, size = 0.05)
 ```
+
+```{r}
+summary(modelo1, size = 0.1)
+```
+
+```{r}
+modelo1  %>%  
+  gather_draws(b_Intercept, b_goals, b_assists, sigma) %>% 
+  ggplot(aes(x = .iteration, y = .value, color = as.factor(.chain))) +
+  geom_line(size = 0.05) +
+  labs(color = "Chain") +
+  facet_wrap(vars(.variable), scales = "free_y") +
+  theme(legend.position = "bottom")
+```
+Se observa que las 4 cadenas estan superpuestas por lo que podemos intuir que las mismas convergieron y no dieron estimaciones diferentes.
+
+```{r}
+rhat(modelo1)
+```
+```{r}
+neff_ratio(modelo1)
+```
+Como vemos, los $\hat{r}$ dan valores cercanos a 1 y menores a 1.1 lo que indicaría un buen ajuste. Sin embargo el neff_ratio no se acerca a 1 (lo que se consideraría una eficiencia aceptable), por lo que no podemos decir que el ajuste sea necesariamente bueno viendo estas métricas.
+
+Por ejemplo. para los goles el neff_ratio indica que solo un 70% de las muestras son efectivas.
 
